@@ -179,6 +179,7 @@ struct Options {
     bool quickRender = false;
     bool quiet = false;
     bool cat = false, toPly = false;
+    bool profile = true;
     std::string imageFile;
     // x0, x1, y0, y1
     Float cropWindow[2][2];

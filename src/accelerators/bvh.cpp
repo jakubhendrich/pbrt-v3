@@ -92,17 +92,6 @@ struct LBVHTreelet {
     BVHBuildNode *buildNodes;
 };
 
-struct LinearBVHNode {
-    Bounds3f bounds;
-    union {
-        int primitivesOffset;   // leaf
-        int secondChildOffset;  // interior
-    };
-    uint16_t nPrimitives;  // 0 -> interior node
-    uint8_t axis;          // interior node: xyz
-    uint8_t pad[1];        // ensure 32 byte total size
-};
-
 // BVHAccel Utility Functions
 inline uint32_t LeftShift3(uint32_t x) {
     CHECK_LE(x, (1 << 10));
@@ -196,7 +185,7 @@ BVHAccel::BVHAccel(std::vector<std::shared_ptr<Primitive>> p,
 
     // Build BVH tree for primitives using _primitiveInfo_
     MemoryArena arena(1024 * 1024);
-    int totalNodes = 0;
+    totalNodes = 0;
     std::vector<std::shared_ptr<Primitive>> orderedPrims;
     orderedPrims.reserve(primitives.size());
     BVHBuildNode *root;

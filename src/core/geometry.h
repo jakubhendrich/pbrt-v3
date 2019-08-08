@@ -145,6 +145,12 @@ class Vector2 {
     }
     Float LengthSquared() const { return x * x + y * y; }
     Float Length() const { return std::sqrt(LengthSquared()); }
+    int MaximumExtent() const {
+        if (x > y)
+            return 0;
+        else
+            return 1;
+    }
 
     // Vector2 Public Data
     T x, y;
@@ -222,6 +228,32 @@ class Vector3 {
         z -= v.z;
         return *this;
     }
+    // The following four (Vector3, Vector3) operators shadow the more general (U, Vector3)
+    // operators below;
+    // if not shadowed, the general operators handle even these cases of per-component
+    // vector multiplication/division, which leads to infinite recursion
+    Vector3<T> operator*(const Vector3<T> &v) const {
+        DCHECK(!v.HasNaNs());
+        return Vector3(x * v.x, y * v.y, z * v.z);
+    }
+    Vector3<T> &operator*=(const Vector3<T> &v) {
+        DCHECK(!v.HasNaNs());
+        x *= v.x;
+        y *= v.y;
+        z *= v.z;
+        return *this;
+    }
+    Vector3<T> operator/(const Vector3<T> &v) const {
+        DCHECK(!v.HasNaNs());
+        return Vector3(x / v.x, y / v.y, z / v.z);
+    }
+    Vector3<T> &operator/=(const Vector3<T> &v) {
+        DCHECK(!v.HasNaNs());
+        x /= v.x;
+        y /= v.y;
+        z /= v.z;
+        return *this;
+    }
     bool operator==(const Vector3<T> &v) const {
         return x == v.x && y == v.y && z == v.z;
     }
@@ -259,6 +291,14 @@ class Vector3 {
     Vector3<T> operator-() const { return Vector3<T>(-x, -y, -z); }
     Float LengthSquared() const { return x * x + y * y + z * z; }
     Float Length() const { return std::sqrt(LengthSquared()); }
+    int MaximumExtent() const {
+        if (x > y && x > z)
+            return 0;
+        else if (y > z)
+            return 1;
+        else
+            return 2;
+    }
     explicit Vector3(const Normal3<T> &n);
 
     // Vector3 Public Data
@@ -703,10 +743,7 @@ class Bounds2 {
     }
     int MaximumExtent() const {
         Vector2<T> diag = Diagonal();
-        if (diag.x > diag.y)
-            return 0;
-        else
-            return 1;
+        return diag.MaximumExtent();
     }
     inline const Point2<T> &operator[](int i) const {
         DCHECK(i == 0 || i == 1);
@@ -763,6 +800,8 @@ class Bounds3 {
                std::max(p1.z, p2.z)) {}
     const Point3<T> &operator[](int i) const;
     Point3<T> &operator[](int i);
+    const T coord(int i) const;
+    T &coord(int i);
     bool operator==(const Bounds3<T> &b) const {
         return b.pMin == pMin && b.pMax == pMax;
     }
@@ -776,6 +815,7 @@ class Bounds3 {
                          (*this)[(corner & 4) ? 1 : 0].z);
     }
     Vector3<T> Diagonal() const { return pMax - pMin; }
+    Point3<T> Center() const { return (pMin + pMax) / 2; }
     T SurfaceArea() const {
         Vector3<T> d = Diagonal();
         return 2 * (d.x * d.y + d.x * d.z + d.y * d.z);
@@ -786,12 +826,18 @@ class Bounds3 {
     }
     int MaximumExtent() const {
         Vector3<T> d = Diagonal();
-        if (d.x > d.y && d.x > d.z)
-            return 0;
-        else if (d.y > d.z)
-            return 1;
-        else
-            return 2;
+        return d.MaximumExtent();
+    }
+    T MaxSize() const {
+        Vector3<T> d = Diagonal();
+        return d[d.MaximumExtent()];
+    }
+    void Enlarge(const Vector3<T> &a) {
+        pMin -= a;
+        pMax += a;
+    }
+    T Size(const int axis) const {
+        return pMax[axis] - pMin[axis];
     }
     Point3<T> Lerp(const Point3f &t) const {
         return Point3<T>(pbrt::Lerp(t.x, pMin.x, pMax.x),
@@ -814,7 +860,7 @@ class Bounds3 {
         return Bounds3<U>((Point3<U>)pMin, (Point3<U>)pMax);
     }
     bool IntersectP(const Ray &ray, Float *hitt0 = nullptr,
-                    Float *hitt1 = nullptr) const;
+                    Float *hitt1 = nullptr, bool clipTmin = true) const;
     inline bool IntersectP(const Ray &ray, const Vector3f &invDir,
                            const int dirIsNeg[3]) const;
     friend std::ostream &operator<<(std::ostream &os, const Bounds3<T> &b) {
@@ -1247,6 +1293,18 @@ inline Point3<T> &Bounds3<T>::operator[](int i) {
 }
 
 template <typename T>
+inline const T Bounds3<T>::coord(int i) const {
+    DCHECK(i >= 0 && i <= 5);
+    return (i <= 2) ? pMin[i] : pMax[i-3];
+}
+
+template <typename T>
+inline T &Bounds3<T>::coord(int i) {
+    DCHECK(i >= 0 && i <= 5);
+    return (i <= 2) ? pMin[i] : pMax[i-3];
+}
+
+template <typename T>
 Bounds3<T> Union(const Bounds3<T> &b, const Point3<T> &p) {
     Bounds3<T> ret;
     ret.pMin = Min(b.pMin, p);
@@ -1272,6 +1330,21 @@ Bounds3<T> Intersect(const Bounds3<T> &b1, const Bounds3<T> &b2) {
     ret.pMin = Max(b1.pMin, b2.pMin);
     ret.pMax = Min(b1.pMax, b2.pMax);
     return ret;
+}
+
+template <typename T>
+T MinDistance(const Bounds3<T> &b1, const Bounds3<T> &b2)
+{
+    Vector3<T> ret;
+    for (int i = 0; i < 3; ++i) {
+        if (b2.pMin[i] > b1.pMax[i])
+            ret[i] = b2.pMin[i] - b1.pMax[i];
+        else if (b1.pMin[i] > b2.pMax[i])
+            ret[i] = b1.pMin[i] - b2.pMax[i];
+        else
+            ret[i] = 0.0f;
+    }
+    return ret.Length();
 }
 
 template <typename T>
@@ -1386,8 +1459,8 @@ Bounds2<T> Expand(const Bounds2<T> &b, U delta) {
 
 template <typename T>
 inline bool Bounds3<T>::IntersectP(const Ray &ray, Float *hitt0,
-                                   Float *hitt1) const {
-    Float t0 = 0, t1 = ray.tMax;
+                                   Float *hitt1, bool clipTmin) const {
+    Float t0 = (clipTmin ? 0 : -Infinity), t1 = ray.tMax;
     for (int i = 0; i < 3; ++i) {
         // Update interval for _i_th bounding box slab
         Float invRayDir = 1 / ray.d[i];

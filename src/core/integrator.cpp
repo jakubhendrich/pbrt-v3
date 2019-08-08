@@ -235,7 +235,7 @@ void SamplerIntegrator::Render(const Scene &scene) {
     const int tileSize = 16;
     Point2i nTiles((sampleExtent.x + tileSize - 1) / tileSize,
                    (sampleExtent.y + tileSize - 1) / tileSize);
-    ProgressReporter reporter(nTiles.x * nTiles.y, "Rendering");
+    ProgressReporter reporter(nTiles.x * nTiles.y, phase);
     {
         ParallelFor2D([&](Point2i tile) {
             // Render section of image corresponding to _tile_
@@ -332,10 +332,11 @@ void SamplerIntegrator::Render(const Scene &scene) {
         }, nTiles);
         reporter.Done();
     }
-    LOG(INFO) << "Rendering finished";
+    LOG(INFO) << phase << " finished";
 
     // Save final image after rendering
-    camera->film->WriteImage();
+    if (phase == "Rendering")
+        camera->film->WriteImage();
 }
 
 Spectrum SamplerIntegrator::SpecularReflect(

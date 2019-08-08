@@ -43,6 +43,7 @@
 // API Additional Headers
 #include "accelerators/bvh.h"
 #include "accelerators/kdtreeaccel.h"
+#include "accelerators/frustumshafts.h"
 #include "cameras/environment.h"
 #include "cameras/orthographic.h"
 #include "cameras/perspective.h"
@@ -158,7 +159,7 @@ struct TransformSet {
 struct RenderOptions {
     // RenderOptions Public Methods
     Integrator *MakeIntegrator() const;
-    Scene *MakeScene();
+    Scene *MakeScene(std::shared_ptr<Primitive> &accelerator);
     Camera *MakeCamera() const;
 
     // RenderOptions Public Data
@@ -776,6 +777,8 @@ std::shared_ptr<Primitive> MakeAccelerator(
         accel = CreateBVHAccelerator(std::move(prims), paramSet);
     else if (name == "kdtree")
         accel = CreateKdTreeAccelerator(std::move(prims), paramSet);
+    else if (name == "frustum")
+        accel = CreateFrustumShaftsAccelerator(std::move(prims), paramSet);
     else
         Warning("Accelerator \"%s\" unknown.", name.c_str());
     paramSet.ReportUnused();
@@ -1569,6 +1572,22 @@ void pbrtObjectInstance(const std::string &name) {
             MakeAccelerator(renderOptions->AcceleratorName, std::move(in),
                             renderOptions->AcceleratorParams));
         if (!accel) accel = std::make_shared<BVHAccel>(in);
+        // Build the frustum shafts, possibly after the calibration phase
+        if (renderOptions->AcceleratorName == "frustum") {
+            FrustumShaftsAccel* frustumShaftsAccel = (FrustumShaftsAccel*)(accel.get());
+            frustumShaftsAccel->setBVHname(name);
+            if (frustumShaftsAccel->UseShafts()) {
+                if (frustumShaftsAccel->GetBuilder()->UseShafts()) {
+                    // Not calibrating the shafts for the instance class BVHs, as the class is not bound to the scene and its instances are
+                    // typically transformed (rotated & translated) within the scene. Also, we don't have the complete scene at hand at this moment.
+                    frustumShaftsAccel->InitBuild();
+                    frustumShaftsAccel->BuildShafts(false);
+                }
+            }
+            else
+                Warning("Disabled building&using shafts, plain BVH acceleration under way...");
+            frustumShaftsAccel->InitRendering();
+        }
         in.clear();
         in.push_back(accel);
     }
@@ -1585,6 +1604,39 @@ void pbrtObjectInstance(const std::string &name) {
     std::shared_ptr<Primitive> prim(
         std::make_shared<TransformedPrimitive>(in[0], animatedInstanceToWorld));
     renderOptions->primitives.push_back(prim);
+}
+
+static void CalibrateFrustumShafts(const Scene* scene, FrustumShaftsAccel* frustumShaftsAccel) {
+    ProfilePhase _(Prof::FrustumShaftCalibration);
+    // Save the original resolution values for further restore.
+    std::unique_ptr<int[]> xResolutionOrig(new int[1]), yResolutionOrig(new int[1]), pixelSamplesOrig(new int[1]);
+    xResolutionOrig[0]  = renderOptions->FilmParams.FindOneInt("xresolution", -1);
+    yResolutionOrig[0]  = renderOptions->FilmParams.FindOneInt("yresolution", -1);
+    pixelSamplesOrig[0] = renderOptions->SamplerParams.FindOneInt("pixelsamples", -1);
+
+    // Load the calibration resolution values.
+    std::unique_ptr<int[]> xResolution(new int[1]), yResolution(new int[1]), pixelSamples(new int[1]);
+    xResolution[0] = frustumShaftsAccel->GetBuilder()->xResolution;
+    yResolution[0] = frustumShaftsAccel->GetBuilder()->yResolution;
+    pixelSamples[0] = frustumShaftsAccel->GetBuilder()->pixelSamples;
+
+    // Apply the calibration resolution values if provided, otherwise keep the original ones.
+    if (xResolution[0] > 0)
+        renderOptions->FilmParams.AddInt("xresolution", std::move(xResolution), 1);
+    if (yResolution[0] > 0)
+        renderOptions->FilmParams.AddInt("yresolution", std::move(yResolution), 1);
+    if (pixelSamples[0] > 0)
+        renderOptions->SamplerParams.AddInt("pixelsamples", std::move(pixelSamples), 1);
+
+    // Create a temporary integrator and run the calibration.
+    std::unique_ptr<Integrator> integrator(renderOptions->MakeIntegrator());
+    frustumShaftsAccel->InitCalibration(); integrator->SetPhase("Calibrating shafts");
+    integrator->Render(*scene);
+
+    // Restore the original resolution values.
+    renderOptions->FilmParams.AddInt("xresolution", std::move(xResolutionOrig), 1);
+    renderOptions->FilmParams.AddInt("yresolution", std::move(yResolutionOrig), 1);
+    renderOptions->SamplerParams.AddInt("pixelsamples", std::move(pixelSamplesOrig), 1);
 }
 
 void pbrtWorldEnd() {
@@ -1605,7 +1657,28 @@ void pbrtWorldEnd() {
         printf("%*sWorldEnd\n", catIndentCount, "");
     } else {
         std::unique_ptr<Integrator> integrator(renderOptions->MakeIntegrator());
-        std::unique_ptr<Scene> scene(renderOptions->MakeScene());
+        std::shared_ptr<Primitive> accel;
+        std::unique_ptr<Scene> scene(renderOptions->MakeScene(accel));
+
+        // Build the frustum shafts, possibly after the calibration phase
+        if (scene && renderOptions->AcceleratorName == "frustum") {
+            FrustumShaftsAccel* frustumShaftsAccel = (FrustumShaftsAccel*)(accel.get());
+            frustumShaftsAccel->setBVHname("mainBVH");
+            if (frustumShaftsAccel->UseShafts()) {
+                if (frustumShaftsAccel->GetBuilder()->UseShafts()) {
+                    ProfilePhase _(Prof::AccelConstruction);
+                    if (frustumShaftsAccel->GetBuilder()->usedShaftsPercentage < 100)
+                        CalibrateFrustumShafts(scene.get(), frustumShaftsAccel);
+                    frustumShaftsAccel->InitBuild();
+                    frustumShaftsAccel->BuildShafts();
+                }
+            }
+            else
+                Warning("Disabled building&using shafts, plain BVH acceleration under way...");
+            frustumShaftsAccel->InitRendering();
+        }
+
+        renderOptions->lights.clear();
 
         // This is kind of ugly; we directly override the current profiler
         // state to switch from parsing/scene construction related stuff to
@@ -1616,6 +1689,7 @@ void pbrtWorldEnd() {
         CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::SceneConstruction));
         ProfilerState = ProfToBits(Prof::IntegratorRender);
 
+        integrator->SetPhase("Rendering");
         if (scene && integrator) integrator->Render(*scene);
 
         CHECK_EQ(CurrentProfilerState(), ProfToBits(Prof::IntegratorRender));
@@ -1648,14 +1722,13 @@ void pbrtWorldEnd() {
                                  namedCoordinateSystems.end());
 }
 
-Scene *RenderOptions::MakeScene() {
-    std::shared_ptr<Primitive> accelerator =
+Scene *RenderOptions::MakeScene(std::shared_ptr<Primitive> &accelerator) {
+    accelerator =
         MakeAccelerator(AcceleratorName, std::move(primitives), AcceleratorParams);
     if (!accelerator) accelerator = std::make_shared<BVHAccel>(primitives);
     Scene *scene = new Scene(accelerator, lights);
     // Erase primitives and lights from _RenderOptions_
     primitives.clear();
-    lights.clear();
     return scene;
 }
 

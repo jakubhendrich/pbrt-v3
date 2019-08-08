@@ -15,6 +15,44 @@ The [pbrt website](http://pbrt.org) has general information about both the
 As of October 2018, the full [text of the book](http://www.pbr-book.org) is
 now available online, for free.
 
+*Extension*: Ray Classification for Accelerated BVH Traversal
+-------------------------------------------------------------
+
+This fork of the pbrt repository contains an extra branch `frustum_shafts`,
+which features code referenced from the
+[Ray Classification for Accelerated BVH Traversal](https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.13769)
+paper [1]. The implementation contains a couple of differences w.r.t. code used for
+measuring the results for the paper:
+
+ * It uses the standard PBRT BVH builders (in the paper we used an external
+   Binning SAH builder).
+ * It only uses binary (PBRT native) BVHs, whereas in the paper we provided
+   a basic analysis of quaternary hierarchies too.
+ * It supports scenes with instanced meshes and two-level BVHs, while in the
+   paper we only tested scenes with plain triangle lists and a single BVH.
+
+The bulk of our added code can be found in the `src/accelerators/frustumshafts.*`
+files. We also had to make some minimal modifications to the original pbrt code
+(`src/accelerators/bvh.*`, `src/core/api.cpp`, `src/core/geometry.h`,
+`src/core/integrator.*`, `src/core/stats.h`) needed to integrate our method,
+which do not interfere with vanilla pbrt.
+	 
+Based on our experiments, we recommend using the *OccupiedVoxels* build variant
+and not finding shafts for instance-outlying rays (the default values in code
+are `USE_ONLY_OCCUPIED_CELLS_FOR_INSTANCES=true` and
+`FIND_SHAFT_FOR_OUTLYING_RAYS=false`). The *OccupiedVoxels* has a reasonably
+fast shafts build and offers similar trace performance as the *Complete* variant.
+For the *Complete* variant, turning on the shaft finding for instance-outsider
+rays saves a bit of rendering effort, but in short renders it might be
+outweighed by the much longer shaft construction, though. Note that the shafts
+for bottom level BVHs share their properties with the main BVH's shafts.
+
+The [code](https://dcgi.fel.cvut.cz/home/hendrij/rc+bvh/) is open for anyone to
+study, test, and modify. We hope it will spark new research ideas and will be
+happy to see derived work.
+
+\[1\] Jakub Hendrich, Adam Pospíšil, Daniel Meister, Jiří Bittner. [Ray Classification for Accelerated BVH Traversal](https://onlinelibrary.wiley.com/doi/full/10.1111/cgf.13769). Computer Graphics Forum, 38: 49-56, 2019. doi:10.1111/cgf.13769.
+
 Example scenes
 --------------
 

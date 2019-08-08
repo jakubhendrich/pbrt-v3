@@ -61,6 +61,7 @@ Logging options:
   --minloglevel <num>  Log messages at or above this level (0 -> INFO,
                        1 -> WARNING, 2 -> ERROR, 3-> FATAL). Default: 0.
   --v <verbosity>      Set VLOG verbosity.
+  --noprofiler         Don't install and run the internal code profiler.
 
 Reformatting options:
   --cat                Print a reformatted version of the input file(s) to
@@ -127,9 +128,10 @@ int main(int argc, char *argv[]) {
             FLAGS_v = atoi(argv[++i]);
         } else if (!strncmp(argv[i], "--v=", 4)) {
           FLAGS_v = atoi(argv[i] + 4);
-        }
-        else if (!strcmp(argv[i], "--logtostderr")) {
+        } else if (!strcmp(argv[i], "--logtostderr")) {
           FLAGS_logtostderr = true;
+        } else if (!strcmp(argv[i], "--noprofiler")) {
+          options.profile = false;
         } else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-help") ||
                    !strcmp(argv[i], "-h")) {
             usage();

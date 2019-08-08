@@ -49,7 +49,6 @@ struct BVHBuildNode;
 // BVHAccel Forward Declarations
 struct BVHPrimitiveInfo;
 struct MortonPrimitive;
-struct LinearBVHNode;
 
 // BVHAccel Declarations
 class BVHAccel : public Aggregate {
@@ -87,11 +86,27 @@ class BVHAccel : public Aggregate {
                                 int start, int end, int *totalNodes) const;
     int flattenBVHTree(BVHBuildNode *node, int *offset);
 
-    // BVHAccel Private Data
+  protected:
+    // BVHAccel Protected Data
+    struct LinearBVHNode {
+        Bounds3f bounds;
+        union {
+            int primitivesOffset;   // leaf
+            int secondChildOffset;  // interior
+        };
+        uint16_t nPrimitives;  // 0 -> interior node
+        uint8_t axis;          // interior node: xyz
+        uint8_t pad[1];        // ensure 32 byte total size
+        bool IsLeaf() const {
+            return nPrimitives > 0;
+        }
+    };
+
     const int maxPrimsInNode;
     const SplitMethod splitMethod;
     std::vector<std::shared_ptr<Primitive>> primitives;
     LinearBVHNode *nodes = nullptr;
+    int totalNodes;
 };
 
 std::shared_ptr<BVHAccel> CreateBVHAccelerator(

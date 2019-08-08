@@ -54,7 +54,12 @@ class Integrator {
   public:
     // Integrator Interface
     virtual ~Integrator();
+    void SetPhase(const std::string _phase = "Rendering") {
+        phase = _phase;
+    }
     virtual void Render(const Scene &scene) = 0;
+
+    std::string phase;
 };
 
 Spectrum UniformSampleAllLights(const Interaction &it, const Scene &scene,

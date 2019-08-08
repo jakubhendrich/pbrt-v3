@@ -216,6 +216,8 @@ void InitProfiler() {
     ClearProfiler();
 
     profileStartTime = std::chrono::system_clock::now();
+    if (!PbrtOptions.profile)
+        return;
 // Set timer to periodically interrupt the system for profiling
 #ifdef PBRT_HAVE_ITIMER
     struct sigaction sa;
@@ -265,6 +267,8 @@ void ClearProfiler() {
 }
 
 void CleanupProfiler() {
+    if (!PbrtOptions.profile)
+        return;
     CHECK(profilerRunning);
 #ifdef PBRT_HAVE_ITIMER
     static struct itimerval timer;

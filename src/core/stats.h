@@ -142,6 +142,8 @@ class StatsAccumulator {
 enum class Prof {
     SceneConstruction,
     AccelConstruction,
+    FrustumShaftCalibration,
+    FrustumShaftConstruction,
     TextureLoading,
     MIPMapCreation,
 
@@ -197,6 +199,8 @@ inline uint64_t ProfToBits(Prof p) { return 1ull << (int)p; }
 static const char *ProfNames[] = {
     "Scene parsing and creation",
     "Acceleration structure creation",
+    "Frustum shafts calibration",
+    "Frustum shafts construction",
     "Texture loading",
     "MIP map generation",
 
