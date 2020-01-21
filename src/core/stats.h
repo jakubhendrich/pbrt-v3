@@ -70,6 +70,8 @@ class StatRegisterer {
 
 void PrintStats(FILE *dest);
 void ClearStats();
+void SwapStatsAccumulators(StatsAccumulator &customStatsAccumulator);
+void SumMemoryCounter(StatsAccumulator &customStatsAccumulator, const std::string &name);
 void ReportThreadStats();
 
 class StatsAccumulator {
@@ -122,6 +124,8 @@ class StatsAccumulator {
 
     void Print(FILE *file);
     void Clear();
+    void Swap(StatsAccumulator &customStatsAccumulator);
+    void SumMemoryCounter(StatsAccumulator &customStatsAccumulator, const std::string &name);
 
   private:
     // StatsAccumulator Private Data

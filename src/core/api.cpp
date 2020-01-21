@@ -1546,6 +1546,12 @@ void pbrtObjectEnd() {
 
 STAT_COUNTER("Scene/Object instances used", nObjectInstancesUsed);
 
+static void SwapStats(StatsAccumulator &statsAccumulator) {
+    MergeWorkerThreadStats();
+    ReportThreadStats();
+    SwapStatsAccumulators(statsAccumulator);
+}
+
 void pbrtObjectInstance(const std::string &name) {
     VERIFY_WORLD("ObjectInstance");
     if (PbrtOptions.cat || PbrtOptions.toPly) {
@@ -1578,10 +1584,16 @@ void pbrtObjectInstance(const std::string &name) {
             frustumShaftsAccel->setBVHname(name);
             if (frustumShaftsAccel->UseShafts()) {
                 if (frustumShaftsAccel->GetBuilder()->UseShafts()) {
+                    // Not tainting the general stats with the frustum shaft overhead. Perhaps we should report these values as standalone items.
+                    StatsAccumulator shaftConstructionStats;
+                    SwapStats(shaftConstructionStats);
                     // Not calibrating the shafts for the instance class BVHs, as the class is not bound to the scene and its instances are
                     // typically transformed (rotated & translated) within the scene. Also, we don't have the complete scene at hand at this moment.
                     frustumShaftsAccel->InitBuild();
                     frustumShaftsAccel->BuildShafts(false);
+                    // Swap in the original values, but don't forget to update the published items (the shaft memory consumption for now).
+                    SwapStats(shaftConstructionStats);
+                    SumMemoryCounter(shaftConstructionStats, "Memory/Shafts");
                 }
             }
             else
@@ -1667,14 +1679,30 @@ void pbrtWorldEnd() {
             if (frustumShaftsAccel->UseShafts()) {
                 if (frustumShaftsAccel->GetBuilder()->UseShafts()) {
                     ProfilePhase _(Prof::AccelConstruction);
+                    // Not tainting the general stats with the frustum shaft overhead. Perhaps we should report these values as standalone items.
+                    StatsAccumulator shaftConstructionStats;
+                    SwapStats(shaftConstructionStats);
+                    // Reset all instance accelerators to the build phase
+                    for (auto inst: renderOptions->instances) {
+                        FrustumShaftsAccel* instanceShaftsAccel = (FrustumShaftsAccel*)(inst.second[0].get());
+                        instanceShaftsAccel->InitBuild();
+                    }
                     if (frustumShaftsAccel->GetBuilder()->usedShaftsPercentage < 100)
                         CalibrateFrustumShafts(scene.get(), frustumShaftsAccel);
                     frustumShaftsAccel->InitBuild();
                     frustumShaftsAccel->BuildShafts();
+                    // Swap in the original values, but don't forget to update the published items (the shaft memory consumption for now).
+                    SwapStats(shaftConstructionStats);
+                    SumMemoryCounter(shaftConstructionStats, "Memory/Shafts");
                 }
             }
             else
                 Warning("Disabled building&using shafts, plain BVH acceleration under way...");
+            // Switch all instance accelerators to the render phase
+            for (auto inst: renderOptions->instances) {
+                FrustumShaftsAccel* instanceShaftsAccel = (FrustumShaftsAccel*)(inst.second[0].get());
+                instanceShaftsAccel->InitRendering();
+            }
             frustumShaftsAccel->InitRendering();
         }
 

@@ -90,6 +90,9 @@ void PrintStats(FILE *dest) { statsAccumulator.Print(dest); }
 
 void ClearStats() { statsAccumulator.Clear(); }
 
+void SwapStatsAccumulators(StatsAccumulator &customStatsAccumulator) { statsAccumulator.Swap(customStatsAccumulator); }
+void SumMemoryCounter(StatsAccumulator &customStatsAccumulator, const std::string &name) { statsAccumulator.SumMemoryCounter(customStatsAccumulator, name); }
+
 static void getCategoryAndTitle(const std::string &str, std::string *category,
                                 std::string *title) {
     const char *s = str.c_str();
@@ -199,6 +202,14 @@ void StatsAccumulator::Clear() {
     floatDistributionMaxs.clear();
     percentages.clear();
     ratios.clear();
+}
+
+void StatsAccumulator::Swap(StatsAccumulator &customStatsAccumulator) {
+    std::swap(*this, customStatsAccumulator);
+}
+
+void StatsAccumulator::SumMemoryCounter(StatsAccumulator &customStatsAccumulator, const std::string &name) {
+    memoryCounters[name] += customStatsAccumulator.memoryCounters[name];
 }
 
 PBRT_THREAD_LOCAL uint64_t ProfilerState;
